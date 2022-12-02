@@ -1,0 +1,120 @@
+from socket import AF_INET, socket, SOCK_STREAM
+from threading import Thread
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import utils
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from socket import AF_INET, socket, SOCK_STREAM
+from threading import Thread
+
+
+clients = {}
+addresses = {}
+key={}
+pem=''
+skey=''
+f = Fernet
+ciphertext=''
+count=0
+HOST = ''
+PORT = 33000
+BUFSIZ = 1024
+ADDR = (HOST, PORT)
+
+SERVER = socket(AF_INET, SOCK_STREAM) #returns socket object
+
+SERVER.bind(ADDR) #call the bind function on socket object, binds to address tuple
+
+
+
+
+
+def accept_incoming_connections():
+    """Sets up handling for incoming clients."""
+    while True:
+        client, client_address= SERVER.accept() #accept a connection to our server socket from client socket object
+        global pem
+        pem=client.recv(BUFSIZ)
+        print(pem)
+        skey =Fernet.generate_key()
+        #after the server receives to PEM
+        #server must dePem the Pem
+        pubKeyObj = load_pem_public_key(pem)
+        ciphertext = pubKeyObj.encrypt(
+           skey,
+           padding.OAEP(
+           mgf=padding.MGF1(algorithm=hashes.SHA256()),
+           algorithm=hashes.SHA256(),
+           label=None
+    )
+
+) 
+        print(ciphertext)
+        key[client]=skey
+        client.send(ciphertext)
+        
+        print("%s:%s has connected." % client_address)
+        client.send(bytes("Greetings from the cave!"+
+                          "Now type your name and press enter!", "utf8"))
+        addresses[client] = client_address
+        Thread(target=handle_client, args=(client,)).start()
+		
+def handle_client(client):  # Takes client socket as argument.
+    """Handles a single client connection."""
+    global skey
+    global key
+    name = client.recv(BUFSIZ).decode("utf8")
+    print(name)
+    welcome = 'Welcome %s! If you ever want to quit, type {quit} to exit.' % name
+    client.send(bytes(welcome, "utf8"))
+    msg = "%s has joined the chat!" % name
+    broadcast2(bytes(msg, "utf8"))
+    clients[client] = name
+    while True:
+        msg = client.recv(BUFSIZ).decode("utf8")
+        print(msg)
+        nkey=key[client]
+        print(nkey)
+        if msg != bytes("{quit}", "utf8"):
+            msgs=f(nkey).decrypt(bytes(msg,"utf8"))
+            print("msgs")
+            print(msgs)
+            msg=msgs
+            print(msg)
+            broadcast(msg, name+": ")
+        else:
+            #client.send(bytes("{quit}", "utf8"))
+            client.close()
+            del clients[client]
+            broadcast2(bytes("%s has left the chat." % name, "utf8"))
+            break
+            
+def broadcast2(msg, prefix=""):  # prefix is for name identification.
+    """Broadcasts a message to all the clients."""
+    for sock in clients:
+            sock.send(bytes(prefix, "utf8")+msg)
+			
+def broadcast(msg, prefix=""):  # prefix is for name identification.
+    """Broadcasts a message to all the clients."""
+    for sock in clients:
+            keysock=key[sock]
+            print(keysock)
+            encrypted=f(keysock).encrypt(msg)
+            sock.send(bytes(prefix, "utf8")+encrypted)
+            
+		
+		
+if __name__ == "__main__":
+    SERVER.listen(5)
+    print("Waiting for connection...")
+    ACCEPT_THREAD = Thread(target=accept_incoming_connections)
+    ACCEPT_THREAD.start()
+    ACCEPT_THREAD.join()
+    SERVER.close()
+	
+
+
