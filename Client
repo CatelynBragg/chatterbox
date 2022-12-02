@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Script for Tkinter GUI chat client."""
+
+from socket import AF_INET, socket, SOCK_STREAM
+from threading import Thread
+import tkinter
+from cryptography.fernet import Fernet
+import pygame
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+
+pygame.mixer.init()
+count=0
+f = Fernet
+symkey=''
+def play_sound():
+ pygame.mixer.music.load("sentsound.wav")
+ pygame.mixer.music.play()
+
+#create private key object
+private_key = rsa.generate_private_key(
+
+    public_exponent=65537,
+
+    key_size=2048,
+
+)
+public_key = private_key.public_key()
+
+pem = public_key.public_bytes(
+
+   encoding=serialization.Encoding.PEM,
+
+   format=serialization.PublicFormat.SubjectPublicKeyInfo
+
+
+)
+
+
+
+def receive():
+    """Handles receiving of messages."""
+    global f
+    global symkey
+    ciphertext = client_socket.recv(BUFSIZ)
+    print(ciphertext)
+    symmkey = private_key.decrypt(
+        ciphertext,
+        padding.OAEP(
+        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+        algorithm=hashes.SHA256(),
+        label=None
+
+                    )
+
+                )
+    print(symmkey)
+    f = Fernet(symmkey)
+    print(f)
+    while True:
+        try:
+                msg =(client_socket.recv(BUFSIZ)).decode("utf8")
+                print(msg)
+                if ':' not in msg:
+                    print("message from server")
+                    print(msg)
+                    msg_list.insert(tkinter.END,msg)
+                elif "has left the chat" in msg:
+                    msg_list.insert(tkinter.END, msg)
+                else:
+                    str(msg)
+                    print(msg)
+                    name,words = msg.split(':')
+                    decrypted = f.decrypt(bytes(words,"utf8"))
+                    print(decrypted)
+                    output = decrypted.decode()
+                    print(output)
+                    mes=(name +":"+ output)
+                    msg_list.insert(tkinter.END,mes)
+        except OSError:  # Possibly client has left the chat.
+            break
+			
+def send(event=None):  # event is passed by binders.
+    """Handles sending of messages."""
+    global count
+    global f
+    global symkey
+    msg = my_msg.get()
+    my_msg.set("")  # Clears input field.
+    if count==0:
+        client_socket.send(bytes(msg,"utf8"))
+        print(msg)
+    else:
+        client_socket.send(f.encrypt(bytes(msg,"utf8")))#encryption
+    play_sound()
+    count+=1
+    if msg == "{quit}":
+        client_socket.close()
+        top.destroy()
+		
+def on_closing(event=None):
+    """This function is to be called when the window is closed."""
+    my_msg.set("{quit}")
+    send(bytes(my_msg.get(),"utf8"))
+	
+top = tkinter.Tk()
+top.title("Chatter")
+
+messages_frame = tkinter.Frame(top)
+my_msg = tkinter.StringVar()  # For the messages to be sent.
+my_msg.set("Type your messages here.")
+scrollbar = tkinter.Scrollbar(messages_frame) # To navigate through past messages.
+
+msg_list = tkinter.Listbox(messages_frame, height=15, width=50,bg='pink', yscrollcommand=scrollbar.set)# background where text is
+scrollbar.pack(side=tkinter.RIGHT,fill=tkinter.Y)
+msg_list.pack(side=tkinter.LEFT, fill=tkinter.BOTH)
+msg_list.pack()
+messages_frame.pack()
+
+entry_field = tkinter.Entry(top, textvariable=my_msg)
+entry_field.bind("<Return>", send)
+entry_field.pack()
+send_button = tkinter.Button(top, text="Send",bg='#4a7abc',
+fg='blue',activebackground='green',
+    activeforeground='white', command=send)
+send_button.pack()
+top.protocol("WM_DELETE_WINDOW", on_closing)
+
+
+HOST = input('Enter host: ')
+PORT = input('Enter port: ')
+if not PORT:
+    PORT = 33000  # Default value.
+else:
+    PORT = int(PORT)
+BUFSIZ = 1024
+ADDR = (HOST, PORT)
+client_socket = socket(AF_INET, SOCK_STREAM)
+client_socket.connect(ADDR)
+client_socket.send(pem)
+
+receive_thread = Thread(target=receive)
+receive_thread.start()
+tkinter.mainloop() # Starts GUI execution.
